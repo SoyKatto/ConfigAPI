@@ -122,8 +122,27 @@ public abstract class ConfigAPI {
             try {
                 String fieldName = field.getName();
                 Object value = field.get(this);
-                JsonObject parent = getParentObject(field);
-                addJsonValue(parent, fieldName, value);
+
+                ConfigCategory categoryAnno = field.getAnnotation(ConfigCategory.class);
+                JsonObject parent;
+                String jsonKey = fieldName;
+
+                if (categoryAnno != null) {
+                    String categoryName = categoryAnno.value();
+                    if (!mainJson.has(categoryName)) {
+                        mainJson.add(categoryName, new JsonObject());
+                    }
+                    parent = mainJson.getAsJsonObject(categoryName);
+
+                    if (fieldName.startsWith(categoryName)) {
+                        jsonKey = fieldName.substring(categoryName.length());
+                        if (jsonKey.startsWith("_") || jsonKey.startsWith("-")) jsonKey = jsonKey.substring(1);
+                    }
+                } else {
+                    parent = mainJson;
+                }
+
+                addJsonValue(parent, jsonKey, value);
 
             } catch (IllegalAccessException e) {
                 e.printStackTrace();
@@ -213,11 +232,19 @@ public abstract class ConfigAPI {
     }
 
     public List<String> getElements() {
+        return getElements(null);
+    }
+
+    public List<String> getElements(Class<?> type) {
         List<String> elements = new ArrayList<>();
 
         for (Field field : this.getClass().getDeclaredFields()) {
             if (!field.isAnnotationPresent(ConfigField.class)) continue;
-            elements.add(field.getName());
+            field.setAccessible(true);
+
+            if (type == null || type.isAssignableFrom(field.getType())) {
+                elements.add(field.getName());
+            }
         }
 
         return elements;
