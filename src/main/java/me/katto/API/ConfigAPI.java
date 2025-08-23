@@ -209,8 +209,24 @@ public abstract class ConfigAPI {
             field.setAccessible(true);
             field.set(this, value);
 
-            JsonObject parent = getParentObject(field);
-            addJsonValue(parent, fieldName, value);
+            ConfigCategory categoryAnno = field.getAnnotation(ConfigCategory.class);
+            JsonObject parent;
+            String jsonKey = fieldName;
+
+            if (categoryAnno != null) {
+                String categoryName = categoryAnno.value();
+                if (!mainJson.has(categoryName)) mainJson.add(categoryName, new JsonObject());
+                parent = mainJson.getAsJsonObject(categoryName);
+
+                if (fieldName.startsWith(categoryName)) {
+                    jsonKey = fieldName.substring(categoryName.length());
+                    if (jsonKey.startsWith("_") || jsonKey.startsWith("-")) jsonKey = jsonKey.substring(1);
+                }
+            } else {
+                parent = mainJson;
+            }
+
+            addJsonValue(parent, jsonKey, value);
 
             save();
             onReload();
