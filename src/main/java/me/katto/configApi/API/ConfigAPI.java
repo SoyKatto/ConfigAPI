@@ -1,8 +1,8 @@
-package me.katto.API;
+package me.katto.configApi.API;
 
 import com.google.gson.*;
-import me.katto.API.Anotations.ConfigCategory;
-import me.katto.API.Anotations.ConfigField;
+import me.katto.configApi.API.Anotations.ConfigCategory;
+import me.katto.configApi.API.Anotations.ConfigField;
 
 import java.io.*;
 import java.lang.reflect.Field;
