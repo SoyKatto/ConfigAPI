@@ -69,17 +69,17 @@ public abstract class ConfigAPI {
         for (Field field : this.getClass().getDeclaredFields()) {
             if (!field.isAnnotationPresent(ConfigField.class)) continue;
             field.setAccessible(true);
-
             try {
                 String fieldName = field.getName();
                 JsonObject parent = getParentObject(field);
+                String jsonKey = getString(field, fieldName);
 
-                if (!parent.has(fieldName)) {
+                if (!parent.has(jsonKey)) {
                     Object defaultValue = field.get(this);
-                    addJsonValue(parent, fieldName, defaultValue);
+                    addJsonValue(parent, jsonKey, defaultValue);
                 }
 
-                JsonElement value = parent.get(fieldName);
+                JsonElement value = parent.get(jsonKey);
                 if (field.getType() == String.class) {
                     field.set(this, value.getAsString());
                 } else if (field.getType() == int.class) {
@@ -89,14 +89,26 @@ public abstract class ConfigAPI {
                 } else if (field.getType() == boolean.class) {
                     field.setBoolean(this, value.getAsBoolean());
                 } else if (List.class.isAssignableFrom(field.getType())) {
-                    List<Object> list = getObjects(field, value);
-                    field.set(this, list);
+                    field.set(this, getObjects(field, value));
                 }
 
             } catch (IllegalAccessException e) {
                 e.printStackTrace();
             }
         }
+    }
+
+    private static String getString(Field field, String fieldName) {
+        String jsonKey = fieldName;
+        ConfigCategory categoryAnno = field.getAnnotation(ConfigCategory.class);
+        if (categoryAnno != null) {
+            String categoryName = categoryAnno.value();
+            if (fieldName.startsWith(categoryName)) {
+                jsonKey = fieldName.substring(categoryName.length());
+                if (jsonKey.startsWith("_") || jsonKey.startsWith("-")) jsonKey = jsonKey.substring(1);
+            }
+        }
+        return jsonKey;
     }
 
     private static List<Object> getObjects(Field field, JsonElement value) {
