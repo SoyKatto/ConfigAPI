@@ -9,7 +9,9 @@ import java.lang.reflect.Field;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public abstract class ConfigAPI {
     private final File file;
@@ -80,16 +82,24 @@ public abstract class ConfigAPI {
                 }
 
                 JsonElement value = parent.get(jsonKey);
+
                 if (field.getType() == String.class) {
                     field.set(this, value.getAsString());
+
                 } else if (field.getType() == int.class) {
                     field.setInt(this, value.getAsInt());
+
                 } else if (field.getType() == long.class) {
                     field.setLong(this, value.getAsLong());
+
                 } else if (field.getType() == boolean.class) {
                     field.setBoolean(this, value.getAsBoolean());
+
                 } else if (List.class.isAssignableFrom(field.getType())) {
-                    field.set(this, getObjects(field, value));
+                    field.set(this, getListObjects(field, value));
+
+                } else if (Map.class.isAssignableFrom(field.getType())) {
+                    field.set(this, getMapObjects(field, value));
                 }
 
             } catch (IllegalAccessException e) {
@@ -111,19 +121,46 @@ public abstract class ConfigAPI {
         return jsonKey;
     }
 
-    private static List<Object> getObjects(Field field, JsonElement value) {
+    private static List<Object> getListObjects(Field field, JsonElement value) {
         Type genericType = ((ParameterizedType) field.getGenericType()).getActualTypeArguments()[0];
         List<Object> list = new ArrayList<>();
         if (value.isJsonArray()) {
             JsonArray arr = value.getAsJsonArray();
             for (JsonElement elem : arr) {
-                if (genericType == String.class) list.add(elem.getAsString());
-                else if (genericType == Integer.class) list.add(elem.getAsInt());
-                else if (genericType == Long.class) list.add(elem.getAsLong());
-                else if (genericType == Boolean.class) list.add(elem.getAsBoolean());
+                list.add(parsePrimitive(elem, genericType));
             }
         }
         return list;
+    }
+
+    private static Map<Object, Object> getMapObjects(Field field, JsonElement value) {
+        Map<Object, Object> map = new LinkedHashMap<>();
+
+        if (!value.isJsonObject()) return map;
+
+        JsonObject obj = value.getAsJsonObject();
+
+        ParameterizedType pType = (ParameterizedType) field.getGenericType();
+        Type keyType = pType.getActualTypeArguments()[0];
+        Type valueType = pType.getActualTypeArguments()[1];
+
+        for (String keyStr : obj.keySet()) {
+            JsonElement val = obj.get(keyStr);
+
+            Object keyParsed = parsePrimitive(JsonParser.parseString("\"" + keyStr + "\""), keyType);
+            Object valueParsed = parsePrimitive(val, valueType);
+
+            map.put(keyParsed, valueParsed);
+        }
+        return map;
+    }
+
+    private static Object parsePrimitive(JsonElement elem, Type type) {
+        if (type == String.class) return elem.getAsString();
+        if (type == Integer.class || type == int.class) return elem.getAsInt();
+        if (type == Long.class || type == long.class) return elem.getAsLong();
+        if (type == Boolean.class || type == boolean.class) return elem.getAsBoolean();
+        return null;
     }
 
     private void updateJsonFromFields() {
@@ -175,23 +212,54 @@ public abstract class ConfigAPI {
     }
 
     private void addJsonValue(JsonObject parent, String key, Object value) {
-        switch (value) {
-            case String s -> parent.addProperty(key, s);
-            case Integer i -> parent.addProperty(key, i);
-            case Long l -> parent.addProperty(key, l);
-            case Boolean b -> parent.addProperty(key, b);
-            case List<?> objects -> {
-                JsonArray array = new JsonArray();
-                for (Object item : objects) {
-                    if (item instanceof String) array.add((String) item);
-                    else if (item instanceof Integer) array.add((Integer) item);
-                    else if (item instanceof Long) array.add((Long) item);
-                    else if (item instanceof Boolean) array.add((Boolean) item);
-                }
-                parent.add(key, array);
-            }
-            case null, default -> parent.add(key, JsonNull.INSTANCE);
+        if (value == null) {
+            parent.add(key, JsonNull.INSTANCE);
+            return;
         }
+
+        if (value instanceof String s) {
+            parent.addProperty(key, s);
+            return;
+        }
+        if (value instanceof Integer i) {
+            parent.addProperty(key, i);
+            return;
+        }
+        if (value instanceof Long l) {
+            parent.addProperty(key, l);
+            return;
+        }
+        if (value instanceof Boolean b) {
+            parent.addProperty(key, b);
+            return;
+        }
+
+        if (value instanceof List<?> list) {
+            JsonArray array = new JsonArray();
+            for (Object item : list) array.add(toJsonPrimitive(item));
+            parent.add(key, array);
+            return;
+        }
+
+        if (value instanceof Map<?, ?> map) {
+            JsonObject obj = new JsonObject();
+            for (Object k : map.keySet()) {
+                String kStr = String.valueOf(k);
+                obj.add(kStr, toJsonPrimitive(map.get(k)));
+            }
+            parent.add(key, obj);
+            return;
+        }
+
+        parent.add(key, JsonNull.INSTANCE);
+    }
+
+    private JsonElement toJsonPrimitive(Object val) {
+        if (val instanceof String s) return new JsonPrimitive(s);
+        if (val instanceof Integer i) return new JsonPrimitive(i);
+        if (val instanceof Long l) return new JsonPrimitive(l);
+        if (val instanceof Boolean b) return new JsonPrimitive(b);
+        return JsonNull.INSTANCE;
     }
 
     private void startWatcher() {
@@ -254,9 +322,8 @@ public abstract class ConfigAPI {
             field.setAccessible(true);
             return field.get(this);
         } catch (NoSuchFieldException | IllegalAccessException e) {
-            e.printStackTrace();
+            return null;
         }
-        return null;
     }
 
     public List<String> getElements() {
